@@ -1,0 +1,11 @@
+{
+  "name": "جعفر السلمي — للبرمجة وصيانة الجوالات",
+  "short_name": "جعفر السلمي",
+  "start_url": "./",
+  "display": "standalone",
+  "dir": "rtl",
+  "lang": "ar",
+  "background_color": "#060b18",
+  "theme_color": "#060b18",
+  "icons": [{ "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
