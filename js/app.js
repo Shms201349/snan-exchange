@@ -2,6 +2,7 @@ import { db, mode } from './db.js';
 import {
   state, loadAll, onChange, emit, gameById, productById, cartIds, inCart, addToCart, removeFromCart, clearCart,
   cartCount, cartTotals, autoDiscount, myVote, vote, iRequested, requestGame, statusLabel, refreshNotifications,
+  findGameByTitle, requestCustomGame,
 } from './store.js';
 import { $, $$, esc, money, num, lsGet, lsSet, ssGet, ssSet, timeAgo, artImage, toast, modal, openWhatsApp } from './util.js';
 import { icon, crownSVG, shapesSVG } from './icons.js';
@@ -255,7 +256,7 @@ function pageHome() {
     games: () => `<section class="section"><div class="container">${sectionHead('الألعاب', 'أحدث الألعاب وأكثرها طلباً', '#/games')}
       <div class="tabs" id="home-tabs" style="margin-bottom:16px">${GAME_TABS.slice(0, 4).map(([k, l], i) => `<button class="tab ${i === 0 ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
       <div class="grid" id="home-games"></div>
-      <div style="text-align:center;margin-top:20px"><a class="btn btn-outline" href="#/games">${icon('gamepad', 'ico-sm')} كل الألعاب (${state.games.length})</a></div></div></section>`,
+      <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:20px"><a class="btn btn-outline" href="#/games">${icon('gamepad', 'ico-sm')} كل الألعاب (${state.games.length})</a><button class="btn btn-blue" data-act="request-missing">${icon('bell', 'ico-sm')} ما لقيت لعبتك؟ اطلبها</button></div></div></section>`,
     products: () => state.products.length ? `<section class="section"><div class="container">${sectionHead('المنتجات', 'أجهزة ويدات وإكسسوارات — جديد ومستعمل', '#/products')}
       <div class="grid products">${[...state.products].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 4).map(productCard).join('')}</div></div></section>` : '',
     services: () => `<section class="section"><div class="container">${sectionHead('خدماتنا', 'كل ما يحتاجه جهازك في مكان واحد', '#/services', 'تفاصيل الخدمات')}
@@ -292,7 +293,8 @@ function pageGames(_, q) {
   let tab = q.get('tab') || 'new', plat = 'all', term = q.get('q') || '', page = 1;
   const PER = 24;
   const html = `<div class="page-head"><div class="container"><div class="crumbs"><a href="#/">الرئيسية</a> / <span>الألعاب</span></div>
-    <h1>🎮 مكتبة الألعاب</h1><p>ابحث عن لعبتك، وإذا ما كانت متوفرة اطلب توفيرها وبنجهزها لك</p></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap"><div><h1>🎮 مكتبة الألعاب</h1><p>ابحث عن لعبتك، وإذا ما لقيتها اطلب توفيرها وبنجهزها لك</p></div>
+    <button class="btn btn-blue" data-act="request-missing">${icon('bell', 'ico-sm')} اطلب لعبة غير موجودة</button></div></div></div>
     <div class="container" style="padding-bottom:30px"><div class="toolbar">
       <label class="search">${icon('search')}<input id="g-search" type="search" placeholder="ابحث باسم اللعبة… مثل FC أو سبايدرمان" value="${esc(term)}" autocomplete="off"></label>
       <div class="tabs" id="g-tabs">${GAME_TABS.map(([k, l]) => `<button class="tab ${k === tab ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
@@ -312,7 +314,7 @@ function pageGames(_, q) {
         page = Math.min(page, pages);
         const slice = list.slice((page - 1) * PER, page * PER);
         grid.innerHTML = slice.length ? slice.map(gameCard).join('') : `<div class="empty" style="grid-column:1/-1"><div class="big">🔍</div>ما لقينا لعبة بهذا الاسم.<br>
-          ${term ? `<a class="btn btn-blue" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${state.site.whatsapp}?text=${encodeURIComponent('أبغى لعبة: ' + term)}">${icon('wa', 'ico-sm')} اطلبها منا مباشرة</a>` : ''}</div>`;
+          <button class="btn btn-blue" style="margin-top:12px" data-act="request-missing" data-term="${esc(term)}">${icon('bell', 'ico-sm')} اطلب توفيرها${term ? ` «${esc(term)}»` : ''}</button></div>`;
         $('#g-info').textContent = `${list.length} لعبة`;
         pager.innerHTML = pages > 1 ? `<button data-pg="${page - 1}" ${page === 1 ? 'disabled' : ''}>${icon('chevR', 'ico-sm')}</button>` +
           Array.from({ length: pages }, (_, k) => k + 1).filter((k) => k === 1 || k === pages || Math.abs(k - page) <= 1).map((k, idx, arr) => (idx && k - arr[idx - 1] > 1 ? '<button disabled>…</button>' : '') + `<button data-pg="${k}" class="${k === page ? 'active' : ''}">${k}</button>`).join('') +
@@ -580,6 +582,37 @@ function orderNow(kind, id) {
   });
 }
 
+// طلب توفير لعبة غير موجودة في الموقع
+function requestMissing(term = '') {
+  modal({
+    title: '🙋 اطلب توفير لعبة',
+    body: `<p class="muted" style="margin:0 0 14px">ما لقيت اللعبة اللي تبغاها؟ اكتب اسمها ويوصل طلبك للمحل مباشرة، وكل ما زاد عدد الطلبات وفرناها أسرع. بيوصلك إشعار 🔔 أول ما تتوفر.</p>
+      <div class="field"><label for="rq-title">اسم اللعبة <span class="req">*</span></label><input class="input" id="rq-title" value="${esc(term)}" placeholder="مثال: Gran Turismo 7" autocomplete="off"></div>
+      <div class="field"><span class="lbl">الجهاز</span><div class="radios">${[['PS4', 'PS4'], ['PS5', 'PS5'], ['PS4/PS5', 'الاثنين']].map(([v, l], i) => `<label class="radio"><input type="radio" name="rq-plat" value="${v}" ${i === 2 ? 'checked' : ''}> ${l}</label>`).join('')}</div></div>
+      <div id="rq-match"></div>`,
+    actions: [{ label: `${icon('bell')} أرسل الطلب`, cls: 'btn-blue', onClick: async ({ el }) => {
+      const title = $('#rq-title').value.trim();
+      if (title.length < 2) { $('#rq-title').classList.add('err'); $('#rq-title').focus(); return false; }
+      const found = findGameByTitle(title);
+      if (found) { location.hash = '#/game/' + found.id; toast('اللعبة موجودة في الموقع 🎮', { text: found.title, emoji: '✅', kind: 'ok' }); return true; }
+      try {
+        const n = await requestCustomGame(title, el.querySelector('input[name=rq-plat]:checked').value);
+        toast('تم الطلب — جاري التجهيز ✅', { text: `${n > 1 ? `أنت و${n - 1} غيرك طلبتوا` : 'أنت أول من طلب'} «${title}» — بيوصلك إشعار عند توفرها`, emoji: '🎮', kind: 'ok', timeout: 6000 });
+        return true;
+      } catch (e) { toast('تعذّر إرسال الطلب', { text: e.message, emoji: '⚠️', kind: 'bad' }); return false; }
+    } }, { label: 'إلغاء' }],
+    onMount({ el }) {
+      const inp = $('#rq-title'); inp.focus();
+      const check = () => {
+        const g = findGameByTitle(inp.value) || (inp.value.trim().length > 2 ? state.games.find((x) => x.title.toLowerCase().includes(inp.value.trim().toLowerCase())) : null);
+        $('#rq-match').innerHTML = g ? `<a class="hint ok" style="display:block" href="#/game/${g.id}">🎮 لقينا «${esc(g.title)}» في الموقع — اضغط لفتحها</a>` : '';
+      };
+      inp.addEventListener('input', check); check();
+      el.addEventListener('click', (e) => { if (e.target.closest('#rq-match a')) el.querySelector('[data-close]')?.click(); });
+    },
+  });
+}
+
 // ================= الأحداث العامة =================
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]');
@@ -599,6 +632,7 @@ document.addEventListener('click', async (e) => {
       } else toast('اللعبة موجودة في السلة مسبقاً', { emoji: '🛒', timeout: 2500 });
     } else if (act === 'cart-open') openCart(kind);
     else if (act === 'order-now') orderNow(kind, id);
+    else if (act === 'request-missing') requestMissing(b.dataset.term || '');
     else if (act === 'ask-product') { const p = productById(id); window.open(`https://wa.me/${state.site.whatsapp}?text=${encodeURIComponent('استفسار عن توفر: ' + p.name)}`, '_blank'); }
     else if (act === 'request') {
       b.disabled = true;

@@ -451,10 +451,30 @@ function bannerForm(b) {
 // ===================== طلبات التوفير =====================
 VIEWS.requests = async (main) => {
   const list = state.games.filter((g) => g.status !== 'available').sort((a, b) => (b.requests || 0) - (a.requests || 0));
-  main.innerHTML = `<div class="panel"><div class="panel-head"><h2>🙋 طلبات توفير الألعاب</h2></div>
+  const custom = (await db.list('custom_requests', { limit: 300 }).catch(() => [])).filter((r) => r.status === 'open').sort((a, b) => b.count - a.count);
+  main.innerHTML = `<div class="panel"><div class="panel-head"><h2>🆕 ألعاب طلبها الزباين وغير موجودة في الموقع (${custom.length})</h2></div>
+    <p class="muted" style="margin-top:-6px;font-size:.88rem">الزبون كتب اسم لعبة ما لقاها. اضغط "أضفها للموقع" وبيتعبأ الاسم تلقائياً — وإذا حفظتها كغير متوفرة ينتقل عدد الطلبات لها.</p>
+    <div class="list" id="cr-list">${custom.map((r) => `<div class="li"><div class="notif-ico">🙋</div><div class="grow"><div class="t">${esc(r.title)}</div><div class="s"><span class="req-count">🙋 ${num(r.count)} طلب</span><span>${esc(r.platform || '')}</span><span>${timeAgo(r.updated_at || r.created_at)}</span></div></div>
+      <div class="acts"><button class="btn btn-gold btn-xs" data-add="${r.id}">${icon('plus', 'ico-sm')} أضفها للموقع</button><button class="btn btn-danger btn-xs" data-dismiss="${r.id}">${icon('x', 'ico-sm')}</button></div></div>`).join('') || '<div class="muted">لا توجد طلبات جديدة</div>'}</div></div>
+  <div class="panel"><div class="panel-head"><h2>🙋 طلبات توفير الألعاب</h2></div>
     <p class="muted" style="margin-top:-6px;font-size:.88rem">كل شخص (جهاز) يُحسب طلب واحد فقط. لما توفّر اللعبة اضغط "صارت متوفرة" وبيطلع إشعار للزباين تلقائياً.</p>
     <div class="list" id="r-list">${list.map((g) => `<div class="li"><img src="${esc(gameCover(g))}"><div class="grow"><div class="t">${esc(g.title)}</div><div class="s"><span class="req-count">🙋 ${num(g.requests || 0)} طلب</span><span>${esc(g.platform)}</span></div></div>
       <div class="acts"><button class="btn btn-green btn-xs" data-ok="${g.id}">${icon('check', 'ico-sm')} صارت متوفرة</button><button class="btn btn-ghost btn-xs" data-edit="${g.id}">${icon('edit', 'ico-sm')}</button></div></div>`).join('') || '<div class="empty">🎉 لا توجد ألعاب غير متوفرة</div>'}</div></div>`;
+  $('#cr-list').onclick = async (e) => {
+    const add = e.target.closest('[data-add]'), dis = e.target.closest('[data-dismiss]');
+    if (dis) { if (await confirmBox('حذف الطلب', 'حذف هذا الطلب من القائمة؟', 'حذف', 'إلغاء', 'btn-danger')) { await db.update('custom_requests', dis.dataset.dismiss, { status: 'done' }); show(); } return; }
+    if (!add) return;
+    const r = custom.find((x) => x.id === add.dataset.add);
+    gameForm(null, {
+      draft: { title: r.title, platform: r.platform || 'PS4/PS5', price: DEFAULT_GAME_PRICE },
+      onSaved: async (g) => {
+        await db.update('custom_requests', r.id, { status: 'done' });
+        if (g.status !== 'available') await db.update('games', g.id, { requests: r.count });
+        else await notify({ type: 'available', icon: '✅', title: 'طلبكم صار جاهز', body: `لعبة «${g.title}» اللي طلبها ${r.count} ${r.count === 1 ? 'شخص' : 'أشخاص'} صارت متوفرة الآن 🎉`, link: '#/game/' + g.id });
+        await loadAll(); show();
+      },
+    });
+  };
   $('#r-list').onclick = async (e) => {
     const ok = e.target.closest('[data-ok]'), ed = e.target.closest('[data-edit]');
     if (ed) return gameForm(state.games.find((g) => g.id === ed.dataset.edit));

@@ -122,6 +122,24 @@ create table if not exists public.game_votes (
   primary key (game_id, device_id)
 );
 
+-- ألعاب يطلبها الزباين وغير موجودة في الموقع
+create table if not exists public.custom_requests (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  norm text not null unique,
+  platform text default 'PS4/PS5',
+  count integer not null default 0,
+  status text not null default 'open' check (status in ('open', 'done')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create table if not exists public.custom_request_devices (
+  req_id uuid references public.custom_requests(id) on delete cascade,
+  device_id text not null,
+  created_at timestamptz not null default now(),
+  primary key (req_id, device_id)
+);
+
 create table if not exists public.sync_queue (
   id uuid primary key default gen_random_uuid(),
   rawg_id integer,
@@ -144,6 +162,8 @@ alter table public.orders enable row level security;
 alter table public.game_requests enable row level security;
 alter table public.game_votes enable row level security;
 alter table public.sync_queue enable row level security;
+alter table public.custom_requests enable row level security;
+alter table public.custom_request_devices enable row level security;
 
 do $$
 declare t text;
@@ -156,7 +176,7 @@ begin
     execute format('create policy "admin write" on public.%I for all to authenticated using (public.is_admin()) with check (public.is_admin())', t);
   end loop;
   -- جداول خاصة بالمدير فقط
-  foreach t in array array['game_sources', 'coupons', 'orders', 'game_requests', 'game_votes', 'sync_queue'] loop
+  foreach t in array array['game_sources', 'coupons', 'orders', 'game_requests', 'game_votes', 'sync_queue', 'custom_requests', 'custom_request_devices'] loop
     execute format('drop policy if exists "admin only" on public.%I', t);
     execute format('create policy "admin only" on public.%I for all to authenticated using (public.is_admin()) with check (public.is_admin())', t);
   end loop;
@@ -197,6 +217,34 @@ begin
     perform _notify_request(p_game, v_title, v_n);
   else
     select requests into v_n from games where id = p_game;
+  end if;
+  return v_n;
+end $$;
+
+create or replace function public.request_custom_game(p_title text, p_platform text, p_device text) returns integer
+language plpgsql security definer set search_path = public as $$
+declare v_title text := left(trim(coalesce(p_title, '')), 80); v_norm text; v_id uuid; v_n int; v_recent int; v_body text; v_ref text;
+begin
+  if length(v_title) < 2 then raise exception 'اكتب اسم اللعبة'; end if;
+  if p_device is null or length(p_device) < 8 or length(p_device) > 64 then raise exception 'bad device'; end if;
+  select count(*) into v_recent from custom_request_devices where device_id = p_device and created_at > now() - interval '1 hour';
+  if v_recent >= 10 then raise exception 'طلبات كثيرة، حاول لاحقاً'; end if;
+  v_norm := regexp_replace(lower(v_title), '\s+', ' ', 'g');
+  insert into custom_requests (title, norm, platform) values (v_title, v_norm, coalesce(nullif(p_platform, ''), 'PS4/PS5'))
+  on conflict (norm) do update set status = 'open', updated_at = now()
+  returning id into v_id;
+  insert into custom_request_devices (req_id, device_id) values (v_id, p_device) on conflict do nothing;
+  if found then
+    update custom_requests set count = count + 1 where id = v_id returning count, title into v_n, v_title;
+    v_ref := 'creq:' || v_id::text;
+    v_body := case when v_n > 1 then v_n || ' أشخاص طلبوا توفير لعبة «' || v_title || '» — جاري تجهيزها في المحل'
+      else 'لاعب طلب توفير لعبة «' || v_title || '» — جاري تجهيزها في المحل' end;
+    update notifications set body = v_body, created_at = now() where ref = v_ref and created_at > now() - interval '6 hours';
+    if not found then
+      insert into notifications (type, icon, title, body, link, ref) values ('request', '🙋', 'طلب توفير لعبة', v_body, '#/games', v_ref);
+    end if;
+  else
+    select count into v_n from custom_requests where id = v_id;
   end if;
   return v_n;
 end $$;
@@ -277,6 +325,7 @@ end $$;
 grant execute on function public.is_admin() to anon, authenticated;
 grant execute on function public.request_game(uuid, text) to anon, authenticated;
 grant execute on function public.vote_game(uuid, text, int) to anon, authenticated;
+grant execute on function public.request_custom_game(text, text, text) to anon, authenticated;
 grant execute on function public.check_coupon(text) to anon, authenticated;
 grant execute on function public.place_order(text, text, uuid[], text) to anon, authenticated;
 

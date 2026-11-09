@@ -1,0 +1,164 @@
+{
+ "g1": {
+  "name": "EA SPORTS FC™ 25",
+  "cover": "assets/demo/g1-cover.webp",
+  "shots": [
+   "assets/demo/g1-s0.webp",
+   "assets/demo/g1-s1.webp",
+   "assets/demo/g1-s2.webp"
+  ]
+ },
+ "g2": {
+  "name": "Marvel's Spider-Man 2",
+  "cover": "assets/demo/g2-cover.webp",
+  "shots": [
+   "assets/demo/g2-s0.webp",
+   "assets/demo/g2-s1.webp",
+   "assets/demo/g2-s2.webp"
+  ]
+ },
+ "g3": {
+  "name": "God of War Ragnarök",
+  "cover": "assets/demo/g3-cover.webp",
+  "shots": [
+   "assets/demo/g3-s0.webp",
+   "assets/demo/g3-s1.webp",
+   "assets/demo/g3-s2.webp"
+  ]
+ },
+ "g4": {
+  "name": "Grand Theft Auto V Legacy",
+  "cover": "assets/demo/g4-cover.webp",
+  "shots": [
+   "assets/demo/g4-s0.webp",
+   "assets/demo/g4-s1.webp",
+   "assets/demo/g4-s2.webp"
+  ]
+ },
+ "g5": {
+  "name": "Call of Duty®: Modern Warfare® III",
+  "cover": "assets/demo/g5-cover.webp",
+  "shots": [
+   "assets/demo/g5-s0.webp",
+   "assets/demo/g5-s1.webp",
+   "assets/demo/g5-s2.webp"
+  ]
+ },
+ "g6": {
+  "name": "Minecraft Dungeons",
+  "cover": "assets/demo/g6-cover.webp",
+  "shots": [
+   "assets/demo/g6-s0.webp",
+   "assets/demo/g6-s1.webp",
+   "assets/demo/g6-s2.webp"
+  ]
+ },
+ "g7": {
+  "name": "TEKKEN 8",
+  "cover": "assets/demo/g7-cover.webp",
+  "shots": [
+   "assets/demo/g7-s0.webp",
+   "assets/demo/g7-s1.webp",
+   "assets/demo/g7-s2.webp"
+  ]
+ },
+ "g8": {
+  "name": "The Last of Us™ Part II Remastered",
+  "cover": "assets/demo/g8-cover.webp",
+  "shots": [
+   "assets/demo/g8-s0.webp",
+   "assets/demo/g8-s1.webp",
+   "assets/demo/g8-s2.webp"
+  ]
+ },
+ "g9": {
+  "name": "UNCHARTED™: Legacy of Thieves Collection",
+  "cover": "assets/demo/g9-cover.webp",
+  "shots": [
+   "assets/demo/g9-s0.webp",
+   "assets/demo/g9-s1.webp",
+   "assets/demo/g9-s2.webp"
+  ]
+ },
+ "g10": {
+  "name": "Red Dead Redemption 2",
+  "cover": "assets/demo/g10-cover.webp",
+  "shots": [
+   "assets/demo/g10-s0.webp",
+   "assets/demo/g10-s1.webp",
+   "assets/demo/g10-s2.webp"
+  ]
+ },
+ "g11": {
+  "name": "Ghost of Tsushima DIRECTOR'S CUT",
+  "cover": "assets/demo/g11-cover.webp",
+  "shots": [
+   "assets/demo/g11-s0.webp",
+   "assets/demo/g11-s1.webp",
+   "assets/demo/g11-s2.webp"
+  ]
+ },
+ "g12": {
+  "name": "ELDEN RING",
+  "cover": "assets/demo/g12-cover.webp",
+  "shots": [
+   "assets/demo/g12-s0.webp",
+   "assets/demo/g12-s1.webp",
+   "assets/demo/g12-s2.webp"
+  ]
+ },
+ "g13": {
+  "name": "Resident Evil 4",
+  "cover": "assets/demo/g13-cover.webp",
+  "shots": [
+   "assets/demo/g13-s0.webp",
+   "assets/demo/g13-s1.webp",
+   "assets/demo/g13-s2.webp"
+  ]
+ },
+ "g14": {
+  "name": "Assassin's Creed Mirage",
+  "cover": "assets/demo/g14-cover.webp",
+  "shots": [
+   "assets/demo/g14-s0.webp",
+   "assets/demo/g14-s1.webp",
+   "assets/demo/g14-s2.webp"
+  ]
+ },
+ "g15": {
+  "name": "Mortal Kombat 1",
+  "cover": "assets/demo/g15-cover.webp",
+  "shots": [
+   "assets/demo/g15-s0.webp",
+   "assets/demo/g15-s1.webp",
+   "assets/demo/g15-s2.webp"
+  ]
+ },
+ "g16": {
+  "name": "Need for Speed™ Unbound",
+  "cover": "assets/demo/g16-cover.webp",
+  "shots": [
+   "assets/demo/g16-s0.webp",
+   "assets/demo/g16-s1.webp",
+   "assets/demo/g16-s2.webp"
+  ]
+ },
+ "g17": {
+  "name": "Hogwarts Legacy",
+  "cover": "assets/demo/g17-cover.webp",
+  "shots": [
+   "assets/demo/g17-s0.webp",
+   "assets/demo/g17-s1.webp",
+   "assets/demo/g17-s2.webp"
+  ]
+ },
+ "g18": {
+  "name": "Black Myth: Wukong",
+  "cover": "assets/demo/g18-cover.webp",
+  "shots": [
+   "assets/demo/g18-s0.webp",
+   "assets/demo/g18-s1.webp",
+   "assets/demo/g18-s2.webp"
+  ]
+ }
+}

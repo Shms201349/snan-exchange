@@ -96,6 +96,19 @@ export async function requestGame(id) {
   return n;
 }
 
+// طلب لعبة غير موجودة في الموقع
+export const normTitle = (t) => String(t || '').toLowerCase().replace(/[™®©:’'"]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+export function findGameByTitle(t) {
+  const n = normTitle(t);
+  if (n.length < 2) return null;
+  return state.games.find((g) => normTitle(g.title) === n) || null;
+}
+export async function requestCustomGame(title, platform) {
+  const n = await db.rpc('request_custom_game', { p_title: title, p_platform: platform, p_device: deviceId() });
+  refreshNotifications().catch(() => {});
+  return n;
+}
+
 // ===== الإشعارات (إنشاء من لوحة التحكم) =====
 export async function notify({ type, icon, title, body, link = null, ref = null }) {
   return db.insert('notifications', { type, icon, title, body, link, ref, meta: {} });

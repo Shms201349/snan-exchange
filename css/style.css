@@ -675,3 +675,9 @@ button { cursor: pointer; border: 0; background: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* شارات البطاقات فوق الصور: خلفية داكنة للوضوح */
+.card-badges .badge { background: rgba(6, 11, 24, .82); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.card-badges .badge.b-green { color: #4ade80; }
+.card-badges .badge.b-blue { color: #8fb6ff; }
+.card-badges .badge.b-gold { color: #f6c453; }

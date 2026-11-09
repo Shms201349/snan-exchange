@@ -52,7 +52,7 @@ function cloudDB() {
 
 // ===================== المتصفح (تجريبي) =====================
 function localDB() {
-  const LS = 'jaafar_db_v1';
+  const LS = 'jaafar_db_v2';
   let D;
   try { D = JSON.parse(localStorage.getItem(LS)); } catch { D = null; }
   if (!D || !D.games) D = SEED();
@@ -96,6 +96,25 @@ function localDB() {
         save();
       }
       return g.requests;
+    },
+    request_custom_game({ p_title, p_platform, p_device }) {
+      const title = String(p_title || '').trim().slice(0, 80);
+      if (title.length < 2) throw new Error('اكتب اسم اللعبة');
+      const norm = title.toLowerCase().replace(/\s+/g, ' ');
+      let r = tbl('custom_requests').find((x) => x.norm === norm);
+      if (!r) { r = { id: uid(), title, norm, platform: p_platform || 'PS4/PS5', count: 0, status: 'open', created_at: now() }; tbl('custom_requests').push(r); }
+      r.status = 'open';
+      if (!tbl('custom_request_devices').some((d) => d.req_id === r.id && d.device_id === p_device)) {
+        tbl('custom_request_devices').push({ req_id: r.id, device_id: p_device, created_at: now() });
+        r.count += 1;
+        const ref = 'creq:' + r.id;
+        const body = r.count > 1 ? `${r.count} أشخاص طلبوا توفير لعبة «${r.title}» — جاري تجهيزها في المحل` : `لاعب طلب توفير لعبة «${r.title}» — جاري تجهيزها في المحل`;
+        const ex = tbl('notifications').find((n) => n.ref === ref && Date.now() - new Date(n.created_at) < 6 * 36e5);
+        if (ex) Object.assign(ex, { body, created_at: now() });
+        else notifyLocal({ type: 'request', icon: '🙋', title: 'طلب توفير لعبة', body, link: '#/games', ref });
+        save();
+      }
+      return r.count;
     },
     vote_game({ p_game, p_device, p_vote }) {
       const g = find('games', p_game);

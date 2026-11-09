@@ -7,7 +7,7 @@ const G = [
   ['God of War Ragnarök', 'PS4/PS5', 'ar', 'available', '90 GB', 'كريتوس وأتريوس في رحلة عبر العوالم التسعة قبل نهاية العالم الإسكندنافي.', 44, 2, 0],
   ['Grand Theft Auto V', 'PS4/PS5', 'en', 'available', '95 GB', 'مدينة لوس سانتوس المفتوحة مع ثلاث شخصيات وقصة مليئة بالإثارة.', 52, 4, 0],
   ['Call of Duty: Modern Warfare III', 'PS4/PS5', 'ar', 'available', '149 GB', 'حملة قصصية وأطوار لعب جماعي وزومبي.', 31, 6, 0],
-  ['Minecraft', 'PS4', 'en', 'available', '2 GB', 'ابنِ عالمك الخاص واستكشف وانجُ — لعبة كل الأعمار.', 27, 2, 0],
+  ['Minecraft Dungeons', 'PS4', 'en', 'available', '6 GB', 'مغامرة أكشن في عالم ماين كرافت — العب لوحدك أو مع أصحابك حتى 4 لاعبين.', 27, 2, 0],
   ['Tekken 8', 'PS5', 'ar', 'available', '100 GB', 'أقوى ألعاب القتال بشخصيات جديدة ونظام Heat.', 22, 1, 0],
   ['The Last of Us Part II', 'PS4', 'ar', 'available', '78 GB', 'قصة إيلي المؤثرة في عالم ما بعد الكارثة.', 35, 2, 0],
   ["Uncharted 4: A Thief's End", 'PS4', 'ar', 'unavailable', '60 GB', 'آخر مغامرات نيثان دريك بحثاً عن كنز القراصنة.', 18, 0, 3],
@@ -17,7 +17,7 @@ const G = [
   ['Resident Evil 4', 'PS4/PS5', 'ar', 'available', '67 GB', 'ليون كينيدي في مهمة إنقاذ ابنة الرئيس — نسخة الريميك.', 20, 1, 0],
   ["Assassin's Creed Mirage", 'PS4/PS5', 'ar', 'available', '40 GB', 'باسم في بغداد العباسية — عودة لجذور السلسلة.', 26, 2, 0],
   ['Mortal Kombat 1', 'PS5', 'ar', 'unavailable', '100 GB', 'بداية جديدة لعالم مورتال كومبات.', 12, 1, 2],
-  ['Gran Turismo 7', 'PS4/PS5', 'ar', 'available', '110 GB', 'محاكاة السباقات الأشهر بمئات السيارات والحلبات.', 15, 0, 0],
+  ['Need for Speed Unbound', 'PS5', 'ar', 'available', '35 GB', 'سباقات الشوارع في ليكشور سيتي بأسلوب فني جديد.', 15, 0, 0],
   ['Hogwarts Legacy', 'PS4/PS5', 'en', 'available', '85 GB', 'عِش حياة طالب في هوغوورتس في القرن التاسع عشر.', 19, 1, 0],
   ['Black Myth: Wukong', 'PS5', 'en', 'unavailable', '130 GB', 'مغامرة أكشن مستوحاة من رحلة إلى الغرب.', 17, 0, 7],
 ];
@@ -36,7 +36,7 @@ export function SEED() {
   const games = G.map(([title, platform, language, status, size, description, likes, dislikes, requests], i) => ({
     id: `g${i + 1}`,
     title, platform, language, status, size, description, likes, dislikes, requests,
-    price: 1500, cover: '', screenshots: [],
+    price: 1500, cover: `assets/demo/g${i + 1}-cover.webp`, screenshots: [0, 1, 2].map((k) => `assets/demo/g${i + 1}-s${k}.webp`),
     created_at: new Date(now - i * 36e5 * 7).toISOString(),
   }));
   const products = P.map(([name, category, condition, delivery, price, description, in_stock], i) => ({
@@ -63,6 +63,8 @@ export function SEED() {
     game_requests: [],
     game_votes: [],
     game_sources: [],
+    custom_requests: [],
+    custom_request_devices: [],
     sync_queue: [],
     _order_no: 1000,
   };
