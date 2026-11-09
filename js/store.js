@@ -4,7 +4,7 @@ import { lsGet, lsSet, deviceId } from './util.js';
 import { DEFAULT_SITE, DEFAULT_DISCOUNT } from './defaults.js';
 
 export const state = {
-  games: [], products: [], banners: [], notifications: [],
+  games: [], products: [], banners: [], notifications: [], catalog: [],
   settings: {}, site: { ...DEFAULT_SITE }, discount: { ...DEFAULT_DISCOUNT },
   loaded: false,
 };
@@ -14,11 +14,12 @@ export const onChange = (fn) => listeners.add(fn);
 export const emit = () => listeners.forEach((f) => f());
 
 export async function loadAll() {
-  const [games, products, banners, notifications, settings] = await Promise.all([
+  const [games, products, banners, notifications, settings, catalog] = await Promise.all([
     db.list('games'), db.list('products'), db.list('banners', { order: 'sort', asc: true }),
     db.list('notifications', { limit: 40 }), db.list('settings', { order: null }),
+    db.list('catalog', { limit: 500 }).catch(() => []),
   ]);
-  Object.assign(state, { games, products, banners, notifications, loaded: true });
+  Object.assign(state, { games, products, banners, notifications, catalog, loaded: true });
   state.settings = Object.fromEntries(settings.map((s) => [s.key, s.value]));
   const site = state.settings.site || {};
   state.site = { ...DEFAULT_SITE, ...site };
@@ -103,8 +104,13 @@ export function findGameByTitle(t) {
   if (n.length < 2) return null;
   return state.games.find((g) => normTitle(g.title) === n) || null;
 }
-export async function requestCustomGame(title, platform) {
-  const n = await db.rpc('request_custom_game', { p_title: title, p_platform: platform, p_device: deviceId() });
+export const catNorm = (t) => String(t || '').trim().toLowerCase().replace(/\s+/g, ' ');
+export const iRequestedCustom = (title) => !!lsGet('jx_creq', {})[catNorm(title)];
+export async function requestCustomGame(title, platform, cover = null) {
+  const n = await db.rpc('request_custom_game', { p_title: title, p_platform: platform, p_device: deviceId(), p_cover: cover });
+  const r = lsGet('jx_creq', {}); r[catNorm(title)] = Date.now(); lsSet('jx_creq', r);
+  state.catalog.filter((c) => catNorm(c.title) === catNorm(title)).forEach((c) => { c.requests = n; });
+  emit();
   refreshNotifications().catch(() => {});
   return n;
 }

@@ -52,7 +52,7 @@ function cloudDB() {
 
 // ===================== المتصفح (تجريبي) =====================
 function localDB() {
-  const LS = 'jaafar_db_v2';
+  const LS = 'jaafar_db_v3';
   let D;
   try { D = JSON.parse(localStorage.getItem(LS)); } catch { D = null; }
   if (!D || !D.games) D = SEED();
@@ -97,12 +97,40 @@ function localDB() {
       }
       return g.requests;
     },
-    request_custom_game({ p_title, p_platform, p_device }) {
+    chat_post({ p_name, p_body, p_device }) {
+      const name = String(p_name || '').trim().slice(0, 30), body = String(p_body || '').trim().slice(0, 300);
+      if (name.length < 2 || !body) throw new Error('اكتب اسمك والرسالة');
+      if ((find('settings', 'chat') || {}).value?.public === false) throw new Error('الدردشة العامة متوقفة حالياً');
+      const recent = tbl('chat_rate').filter((r) => r.device_id === p_device && Date.now() - new Date(r.created_at) < 6e5);
+      if (recent.some((r) => Date.now() - new Date(r.created_at) < 5000)) throw new Error('انتظر ثواني قبل الرسالة التالية');
+      if (recent.length >= 20) throw new Error('رسائل كثيرة، حاول بعد قليل');
+      tbl('chat_rate').push({ device_id: p_device, created_at: now() });
+      const m = { id: uid(), name, body, is_admin: false, created_at: now() };
+      tbl('chat_messages').push(m); save(); return m;
+    },
+    support_send({ p_thread, p_secret, p_name, p_body }) {
+      const body = String(p_body || '').trim().slice(0, 1000);
+      if (!body) throw new Error('اكتب رسالتك');
+      let t = p_thread && tbl('support_threads').find((x) => x.id === p_thread && x.secret === p_secret);
+      if (p_thread && !t) throw new Error('المحادثة غير موجودة');
+      if (!t) { t = { id: uid(), secret: uid(), name: '', unread_admin: 0, unread_user: 0, created_at: now() }; tbl('support_threads').push(t); }
+      Object.assign(t, { name: String(p_name || 'زبون').slice(0, 40), unread_admin: (t.unread_admin || 0) + 1, last_body: body.slice(0, 120), last_at: now() });
+      tbl('support_messages').push({ id: uid(), thread_id: t.id, from_admin: false, body, created_at: now() });
+      save(); return { thread_id: t.id, secret: t.secret };
+    },
+    support_fetch({ p_thread, p_secret, p_mark }) {
+      const t = tbl('support_threads').find((x) => x.id === p_thread && x.secret === p_secret);
+      if (!t) throw new Error('المحادثة غير موجودة');
+      const unread = t.unread_user || 0;
+      if (p_mark) { t.unread_user = 0; save(); }
+      return { unread, messages: tbl('support_messages').filter((m) => m.thread_id === t.id).sort((a, b) => (a.created_at > b.created_at ? 1 : -1)).slice(-100).map(({ id, from_admin, body, created_at }) => ({ id, from_admin, body, created_at })) };
+    },
+    request_custom_game({ p_title, p_platform, p_device, p_cover }) {
       const title = String(p_title || '').trim().slice(0, 80);
       if (title.length < 2) throw new Error('اكتب اسم اللعبة');
       const norm = title.toLowerCase().replace(/\s+/g, ' ');
       let r = tbl('custom_requests').find((x) => x.norm === norm);
-      if (!r) { r = { id: uid(), title, norm, platform: p_platform || 'PS4/PS5', count: 0, status: 'open', created_at: now() }; tbl('custom_requests').push(r); }
+      if (!r) { r = { id: uid(), title, norm, platform: p_platform || 'PS4/PS5', cover: p_cover || '', count: 0, status: 'open', created_at: now() }; tbl('custom_requests').push(r); }
       r.status = 'open';
       if (!tbl('custom_request_devices').some((d) => d.req_id === r.id && d.device_id === p_device)) {
         tbl('custom_request_devices').push({ req_id: r.id, device_id: p_device, created_at: now() });
@@ -111,7 +139,8 @@ function localDB() {
         const body = r.count > 1 ? `${r.count} أشخاص طلبوا توفير لعبة «${r.title}» — جاري تجهيزها في المحل` : `لاعب طلب توفير لعبة «${r.title}» — جاري تجهيزها في المحل`;
         const ex = tbl('notifications').find((n) => n.ref === ref && Date.now() - new Date(n.created_at) < 6 * 36e5);
         if (ex) Object.assign(ex, { body, created_at: now() });
-        else notifyLocal({ type: 'request', icon: '🙋', title: 'طلب توفير لعبة', body, link: '#/games', ref });
+        else notifyLocal({ type: 'request', icon: '🙋', title: 'طلب توفير لعبة', body, link: '#/discover', ref });
+        tbl('catalog').filter((c) => c.norm === norm).forEach((c) => { c.requests = r.count; });
         save();
       }
       return r.count;

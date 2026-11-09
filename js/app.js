@@ -2,8 +2,9 @@ import { db, mode } from './db.js';
 import {
   state, loadAll, onChange, emit, gameById, productById, cartIds, inCart, addToCart, removeFromCart, clearCart,
   cartCount, cartTotals, autoDiscount, myVote, vote, iRequested, requestGame, statusLabel, refreshNotifications,
-  findGameByTitle, requestCustomGame,
+  findGameByTitle, requestCustomGame, iRequestedCustom, catNorm,
 } from './store.js';
+import { initChat, openChat, setChatVisible } from './chat.js';
 import { $, $$, esc, money, num, lsGet, lsSet, ssGet, ssSet, timeAgo, artImage, toast, modal, openWhatsApp } from './util.js';
 import { icon, crownSVG, shapesSVG } from './icons.js';
 
@@ -114,6 +115,11 @@ export function productCard(p) {
 function refreshBits() {
   $$('.card-actions[data-g]').forEach((el) => { const g = gameById(el.dataset.g); if (g) el.innerHTML = gameActions(g); });
   $$('.card-actions[data-p]').forEach((el) => { const p = productById(el.dataset.p); if (p) el.innerHTML = productActions(p); });
+  $$('.card-actions[data-c]').forEach((el) => {
+    const t = el.dataset.c;
+    const c = state.catalog.find((x) => x.title === t) || discoverList.find((x) => x.title === t) || { title: t };
+    el.innerHTML = catActions(c);
+  });
   const bb = $('#buy-box');
   if (bb) {
     if (bb.dataset.g) { const g = gameById(bb.dataset.g); if (g) bb.innerHTML = gameBuyBox(g); }
@@ -256,7 +262,7 @@ function pageHome() {
     games: () => `<section class="section"><div class="container">${sectionHead('الألعاب', 'أحدث الألعاب وأكثرها طلباً', '#/games')}
       <div class="tabs" id="home-tabs" style="margin-bottom:16px">${GAME_TABS.slice(0, 4).map(([k, l], i) => `<button class="tab ${i === 0 ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
       <div class="grid" id="home-games"></div>
-      <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:20px"><a class="btn btn-outline" href="#/games">${icon('gamepad', 'ico-sm')} كل الألعاب (${state.games.length})</a><button class="btn btn-blue" data-act="request-missing">${icon('bell', 'ico-sm')} ما لقيت لعبتك؟ اطلبها</button></div></div></section>`,
+      <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:20px"><a class="btn btn-outline" href="#/games">${icon('gamepad', 'ico-sm')} كل الألعاب (${state.games.length})</a><a class="btn btn-blue" href="#/discover">${icon('compass', 'ico-sm')} ما لقيت لعبتك؟ اكتشف واطلب</a></div></div></section>`,
     products: () => state.products.length ? `<section class="section"><div class="container">${sectionHead('المنتجات', 'أجهزة ويدات وإكسسوارات — جديد ومستعمل', '#/products')}
       <div class="grid products">${[...state.products].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 4).map(productCard).join('')}</div></div></section>` : '',
     services: () => `<section class="section"><div class="container">${sectionHead('خدماتنا', 'كل ما يحتاجه جهازك في مكان واحد', '#/services', 'تفاصيل الخدمات')}
@@ -294,7 +300,7 @@ function pageGames(_, q) {
   const PER = 24;
   const html = `<div class="page-head"><div class="container"><div class="crumbs"><a href="#/">الرئيسية</a> / <span>الألعاب</span></div>
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap"><div><h1>🎮 مكتبة الألعاب</h1><p>ابحث عن لعبتك، وإذا ما لقيتها اطلب توفيرها وبنجهزها لك</p></div>
-    <button class="btn btn-blue" data-act="request-missing">${icon('bell', 'ico-sm')} اطلب لعبة غير موجودة</button></div></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-gold" href="#/discover">${icon('compass', 'ico-sm')} اكتشف ألعاب غير موجودة</a><button class="btn btn-blue" data-act="request-missing">${icon('bell', 'ico-sm')} اطلب لعبة بالاسم</button></div></div></div></div>
     <div class="container" style="padding-bottom:30px"><div class="toolbar">
       <label class="search">${icon('search')}<input id="g-search" type="search" placeholder="ابحث باسم اللعبة… مثل FC أو سبايدرمان" value="${esc(term)}" autocomplete="off"></label>
       <div class="tabs" id="g-tabs">${GAME_TABS.map(([k, l]) => `<button class="tab ${k === tab ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
@@ -314,7 +320,7 @@ function pageGames(_, q) {
         page = Math.min(page, pages);
         const slice = list.slice((page - 1) * PER, page * PER);
         grid.innerHTML = slice.length ? slice.map(gameCard).join('') : `<div class="empty" style="grid-column:1/-1"><div class="big">🔍</div>ما لقينا لعبة بهذا الاسم.<br>
-          <button class="btn btn-blue" style="margin-top:12px" data-act="request-missing" data-term="${esc(term)}">${icon('bell', 'ico-sm')} اطلب توفيرها${term ? ` «${esc(term)}»` : ''}</button></div>`;
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px"><a class="btn btn-gold" href="#/discover?q=${encodeURIComponent(term)}">${icon('compass', 'ico-sm')} ابحث في ألعاب غير موجودة</a><button class="btn btn-blue" data-act="request-missing" data-term="${esc(term)}">${icon('bell', 'ico-sm')} اطلب توفيرها${term ? ` «${esc(term)}»` : ''}</button></div></div>`;
         $('#g-info').textContent = `${list.length} لعبة`;
         pager.innerHTML = pages > 1 ? `<button data-pg="${page - 1}" ${page === 1 ? 'disabled' : ''}>${icon('chevR', 'ico-sm')}</button>` +
           Array.from({ length: pages }, (_, k) => k + 1).filter((k) => k === 1 || k === pages || Math.abs(k - page) <= 1).map((k, idx, arr) => (idx && k - arr[idx - 1] > 1 ? '<button disabled>…</button>' : '') + `<button data-pg="${k}" class="${k === page ? 'active' : ''}">${k}</button>`).join('') +
@@ -329,6 +335,78 @@ function pageGames(_, q) {
       pager.addEventListener('click', (e) => { const b = e.target.closest('[data-pg]'); if (!b || b.disabled) return; page = +b.dataset.pg; draw(true); });
     },
   };
+}
+
+// ===== اكتشف ألعاب (غير موجودة في الموقع) =====
+const catalogVisible = () => {
+  const have = new Set(state.games.map((g) => catNorm(g.title)));
+  return state.catalog.filter((c) => !have.has(catNorm(c.title)));
+};
+function catActions(c) {
+  if (iRequestedCustom(c.title)) return `<div class="installing" style="flex:1"><div class="lbl"><span>✅ تم الطلب — جاري التجهيز</span></div><div class="ps-bar"><i style="--p:${Math.min(92, 40 + (c.requests || 1) * 7)}%"></i></div></div>`;
+  return `<button class="btn btn-blue btn-sm" data-act="request-cat" data-title="${esc(c.title)}" data-plat="${esc(c.platform || 'PS4/PS5')}" data-cover="${esc(c.cover || '')}">${icon('bell', 'ico-sm')} اطلب توفيرها</button>`;
+}
+function catCard(c, i) {
+  return `<article class="card cat-card">
+    <a class="card-media" href="#" data-act="cat-view" data-i="${i}" aria-label="${esc(c.title)}">
+      <img loading="lazy" decoding="async" src="${esc(c.cover || artImage(c.title, { sub: c.platform }))}" alt="">
+      <div class="card-badges"><div class="grp"><span class="badge b-solid">${esc(c.platform || 'PS4/PS5')}</span></div><div class="grp"><span class="badge b-gold">غير موجودة</span></div></div>
+      <div class="card-shade"></div>
+      ${c.requests ? `<div class="card-likes"><span>🙋 ${num(c.requests)} طلب</span></div>` : ''}
+    </a>
+    <div class="card-body"><h3 class="card-title">${esc(c.title)}</h3>
+      <div class="card-actions" data-c="${esc(c.title)}">${catActions(c)}</div></div>
+  </article>`;
+}
+let discoverList = [];
+function pageDiscover(_, q) {
+  let term = q.get('q') || '', plat = 'all';
+  const hasKey = !!(window.APP_CONFIG || {}).RAWG_API_KEY;
+  return {
+    html: `<div class="page-head"><div class="container"><div class="crumbs"><a href="#/">الرئيسية</a> / <a href="#/games">الألعاب</a> / <span>اكتشف</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap"><div><h1>🧭 اكتشف ألعاب</h1><p>ألعاب مش موجودة في الموقع حالياً — اطلب توفير اللي يعجبك، وكل ما زادت الطلبات وفرناها أسرع</p></div>
+      <button class="btn btn-ghost" data-act="request-missing">${icon('plus', 'ico-sm')} لعبة مش في القائمة؟</button></div></div></div>
+      <div class="container" style="padding-bottom:30px"><div class="toolbar">
+        <label class="search">${icon('search')}<input id="d-search" type="search" placeholder="ابحث في الألعاب…" value="${esc(term)}" autocomplete="off"></label>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <div class="chips" id="d-plat">${[['all', 'كل الأجهزة'], ['PS4', 'PS4'], ['PS5', 'PS5']].map(([k, l]) => `<button class="chip ${k === plat ? 'active' : ''}" data-p="${k}">${l}</button>`).join('')}</div>
+          <span class="result-info" id="d-info"></span></div>
+      </div><div class="grid" id="d-grid"></div><div id="d-world"></div></div>`,
+    mount() {
+      const draw = () => {
+        let list = catalogVisible().sort((a, b) => (b.requests || 0) - (a.requests || 0) || (a.created_at < b.created_at ? 1 : -1));
+        if (plat !== 'all') list = list.filter((c) => (c.platform || '').includes(plat));
+        if (term.trim()) { const t = norm(term); list = list.filter((c) => norm(c.title).includes(t)); }
+        discoverList = list;
+        $('#d-info').textContent = `${list.length} لعبة`;
+        $('#d-grid').innerHTML = list.length ? list.map(catCard).join('') : `<div class="empty" style="grid-column:1/-1"><div class="big">🔍</div>ما لقيناها في القائمة<br><button class="btn btn-blue" style="margin-top:12px" data-act="request-missing" data-term="${esc(term)}">${icon('bell', 'ico-sm')} اطلبها بالاسم${term ? ` «${esc(term)}»` : ''}</button></div>`;
+        $('#d-world').innerHTML = hasKey && term.trim().length >= 3 ? `<div style="text-align:center;margin-top:20px"><button class="btn btn-outline" id="d-rawg">${icon('globe', 'ico-sm')} ابحث عن «${esc(term)}» في كل الألعاب العالمية</button></div><div class="grid" id="d-rgrid" style="margin-top:16px"></div>` : '';
+        $('#d-rawg')?.addEventListener('click', async (e) => {
+          e.currentTarget.disabled = true;
+          try {
+            const rawg = await import('./rawg.js');
+            const res = (await rawg.search(term)).filter((r) => !findGameByTitle(r.title));
+            const base = discoverList.length;
+            discoverList = [...discoverList, ...res];
+            $('#d-rgrid').innerHTML = res.length ? res.map((r, k) => catCard(r, base + k)).join('') : '<div class="empty" style="grid-column:1/-1">ما لقينا نتائج</div>';
+          } catch (x) { toast('تعذّر البحث', { text: x.message, emoji: '⚠️', kind: 'bad' }); }
+        });
+      };
+      draw();
+      let t;
+      $('#d-search').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { term = e.target.value; draw(); }, 200); });
+      $('#d-plat').addEventListener('click', (e) => { const b = e.target.closest('[data-p]'); if (!b) return; plat = b.dataset.p; $$('#d-plat .chip').forEach((x) => x.classList.toggle('active', x === b)); draw(); });
+    },
+  };
+}
+function catView(c) {
+  const imgs = [...(c.screenshots || []), c.cover].filter(Boolean);
+  modal({
+    title: esc(c.title), wide: true,
+    body: `${imgs.length ? gallery(imgs) : ''}<div style="display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 8px"><span class="badge b-solid">${esc(c.platform || '')}</span><span class="badge b-gold">غير موجودة في الموقع حالياً</span>${c.requests ? `<span class="req-count">🙋 ${num(c.requests)} طلب</span>` : ''}</div>
+      ${c.description ? `<p class="desc">${esc(c.description)}</p>` : ''}<div class="card-actions" data-c="${esc(c.title)}" style="display:flex">${catActions(c)}</div>`,
+    onMount: () => mountGallery(),
+  });
 }
 
 function votesHTML(g) {
@@ -633,6 +711,13 @@ document.addEventListener('click', async (e) => {
     } else if (act === 'cart-open') openCart(kind);
     else if (act === 'order-now') orderNow(kind, id);
     else if (act === 'request-missing') requestMissing(b.dataset.term || '');
+    else if (act === 'cat-view') { const c = discoverList[+b.dataset.i]; if (c) catView(c); }
+    else if (act === 'open-chat') { $('#nav').classList.remove('open'); openChat(b.dataset.tab); }
+    else if (act === 'request-cat') {
+      b.disabled = true;
+      const n = await requestCustomGame(b.dataset.title, b.dataset.plat, b.dataset.cover || null);
+      toast('تم الطلب — جاري التجهيز ✅', { text: `${n > 1 ? `أنت و${n - 1} غيرك طلبتوا` : 'أنت أول من طلب'} «${b.dataset.title}» — بيوصلك إشعار عند توفرها`, emoji: '🎮', kind: 'ok', timeout: 6000 });
+    }
     else if (act === 'ask-product') { const p = productById(id); window.open(`https://wa.me/${state.site.whatsapp}?text=${encodeURIComponent('استفسار عن توفر: ' + p.name)}`, '_blank'); }
     else if (act === 'request') {
       b.disabled = true;
@@ -663,8 +748,8 @@ function footerHTML() {
   return `<div class="container"><div class="footer-grid">
     <div><div class="brand" style="margin-bottom:10px"><div class="brand-mark">${s.logo ? `<img src="${esc(s.logo)}" alt="">` : crownSVG()}</div><div class="brand-text" style="display:flex"><span class="brand-name">${esc(s.name)}</span><span class="brand-sub">${esc(s.sub)}</span></div></div>
       <p class="muted" style="margin:0">${esc(s.tagline)} — ${esc(s.tagline_sub)}</p></div>
-    <div><h4>روابط سريعة</h4><a href="#/games">الألعاب</a><a href="#/products">المنتجات</a><a href="#/services">خدماتنا</a><a href="#/why">لماذا نحن</a><a href="#/news">جديدنا</a></div>
-    <div><h4>تواصل معنا</h4><a href="tel:+${esc(s.whatsapp)}" style="direction:ltr;text-align:right">📞 ${esc(s.phone)}</a><a target="_blank" rel="noopener" href="https://wa.me/${esc(s.whatsapp)}">💬 واتساب</a><a href="#/contact">📍 ${esc(s.address_title)}</a></div>
+    <div><h4>روابط سريعة</h4><a href="#/games">الألعاب</a><a href="#/discover">اكتشف ألعاب</a><a href="#/products">المنتجات</a><a href="#/services">خدماتنا</a><a href="#/why">لماذا نحن</a><a href="#/news">جديدنا</a></div>
+    <div><h4>تواصل معنا</h4><a href="tel:+${esc(s.whatsapp)}" style="direction:ltr;text-align:right">📞 ${esc(s.phone)}</a><a target="_blank" rel="noopener" href="https://wa.me/${esc(s.whatsapp)}">💬 واتساب</a><a href="#" data-act="open-chat" data-tab="support">🎧 تواصل معنا هنا</a><a href="#/contact">📍 ${esc(s.address_title)}</a></div>
   </div><div class="copy">© ${new Date().getFullYear()} ${esc(s.name)} — جميع الحقوق محفوظة</div></div>`;
 }
 
@@ -673,7 +758,7 @@ const routes = [
   [/^\/?$/, pageHome, 'home'], [/^\/games$/, pageGames, 'games'], [/^\/game\/(.+)$/, pageGame, 'games'],
   [/^\/products$/, pageProducts, 'products'], [/^\/product\/(.+)$/, pageProduct, 'products'],
   [/^\/services$/, pageServices, 'services'], [/^\/why$/, pageWhy, 'why'], [/^\/contact$/, pageContact, 'contact'],
-  [/^\/news$/, pageNews, 'news'], [/^\/cp$/, null, 'cp'],
+  [/^\/news$/, pageNews, 'news'], [/^\/discover$/, pageDiscover, 'discover'], [/^\/cp$/, null, 'cp'],
 ];
 let cleanup = null;
 async function route() {
@@ -688,6 +773,8 @@ async function route() {
   let m, page, key;
   for (const [re, fn, k] of routes) { m = path.match(re); if (m) { page = fn; key = k; break; } }
   $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.k === key));
+  setChatVisible(key !== 'cp');
+  $('#fab-wa').classList.toggle('hidden', key === 'cp');
   window.scrollTo(0, 0);
   if (key === 'cp') {
     const { renderAdmin } = await import('./admin.js');
@@ -746,6 +833,7 @@ async function start() {
   renderBrand(); renderCounts();
   onChange(() => { renderBrand(); renderCounts(); refreshBits(); renderCart(); if ($('#bell-dd').classList.contains('open')) renderBell(); });
   window.addEventListener('hashchange', route);
+  initChat();
   await route();
   welcome();
   setInterval(poll, 60000);

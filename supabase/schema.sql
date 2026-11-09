@@ -122,12 +122,109 @@ create table if not exists public.game_votes (
   primary key (game_id, device_id)
 );
 
+-- قائمة "اكتشف ألعاب": ألعاب غير موجودة في الموقع يقدر الزبون يطلبها
+create table if not exists public.catalog (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  norm text not null unique,
+  platform text default 'PS4/PS5',
+  cover text default '',
+  screenshots text[] not null default '{}',
+  description text default '',
+  rawg_id integer,
+  requests integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+-- الدردشة العامة
+create table if not exists public.chat_messages (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  body text not null,
+  is_admin boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists chat_messages_created_idx on public.chat_messages (created_at desc);
+create table if not exists public.chat_rate (
+  device_id text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists chat_rate_idx on public.chat_rate (device_id, created_at desc);
+
+-- محادثات خاصة بين الزبون والمحل
+create table if not exists public.support_threads (
+  id uuid primary key default gen_random_uuid(),
+  secret text not null,
+  name text default '',
+  unread_admin integer not null default 0,
+  unread_user integer not null default 0,
+  last_body text default '',
+  last_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+create table if not exists public.support_messages (
+  id uuid primary key default gen_random_uuid(),
+  thread_id uuid not null references public.support_threads(id) on delete cascade,
+  from_admin boolean not null default false,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists support_messages_thread_idx on public.support_messages (thread_id, created_at);
+
+create or replace function public.chat_post(p_name text, p_body text, p_device text) returns public.chat_messages
+language plpgsql security definer set search_path = public as $$
+declare v_row chat_messages; v_name text := left(trim(coalesce(p_name, '')), 30); v_body text := left(trim(coalesce(p_body, '')), 300);
+begin
+  if length(v_name) < 2 or length(v_body) < 1 then raise exception 'اكتب اسمك والرسالة'; end if;
+  if p_device is null or length(p_device) < 8 or length(p_device) > 64 then raise exception 'bad device'; end if;
+  if coalesce((select (value ->> 'public')::boolean from settings where key = 'chat'), true) = false then raise exception 'الدردشة العامة متوقفة حالياً'; end if;
+  if exists (select 1 from chat_rate where device_id = p_device and created_at > now() - interval '5 seconds') then raise exception 'انتظر ثواني قبل الرسالة التالية'; end if;
+  if (select count(*) from chat_rate where device_id = p_device and created_at > now() - interval '10 minutes') >= 20 then raise exception 'رسائل كثيرة، حاول بعد قليل'; end if;
+  insert into chat_rate (device_id) values (p_device);
+  delete from chat_rate where created_at < now() - interval '1 day';
+  delete from chat_messages where created_at < now() - interval '30 days';
+  insert into chat_messages (name, body) values (v_name, v_body) returning * into v_row;
+  return v_row;
+end $$;
+
+create or replace function public.support_send(p_thread uuid, p_secret text, p_name text, p_body text) returns json
+language plpgsql security definer set search_path = public as $$
+declare v_id uuid := p_thread; v_secret text := p_secret; v_body text := left(trim(coalesce(p_body, '')), 1000);
+begin
+  if length(v_body) < 1 then raise exception 'اكتب رسالتك'; end if;
+  if v_id is null then
+    if (select count(*) from support_threads where created_at > now() - interval '10 minutes') > 30 then raise exception 'ضغط كبير، حاول بعد قليل'; end if;
+    v_secret := encode(gen_random_bytes(18), 'hex');
+    insert into support_threads (secret, name) values (v_secret, left(trim(coalesce(p_name, 'زبون')), 40)) returning id into v_id;
+  elsif not exists (select 1 from support_threads where id = v_id and secret = v_secret) then
+    raise exception 'المحادثة غير موجودة';
+  end if;
+  if (select count(*) from support_messages where thread_id = v_id and not from_admin and created_at > now() - interval '10 minutes') >= 20 then raise exception 'رسائل كثيرة، حاول بعد قليل'; end if;
+  insert into support_messages (thread_id, body) values (v_id, v_body);
+  update support_threads set unread_admin = unread_admin + 1, last_body = left(v_body, 120), last_at = now(),
+    name = left(trim(coalesce(nullif(p_name, ''), name)), 40) where id = v_id;
+  return json_build_object('thread_id', v_id, 'secret', v_secret);
+end $$;
+
+create or replace function public.support_fetch(p_thread uuid, p_secret text, p_mark boolean) returns json
+language plpgsql security definer set search_path = public as $$
+declare v_unread int;
+begin
+  select unread_user into v_unread from support_threads where id = p_thread and secret = p_secret;
+  if not found then raise exception 'المحادثة غير موجودة'; end if;
+  if p_mark then update support_threads set unread_user = 0 where id = p_thread; end if;
+  return json_build_object('unread', v_unread, 'messages', (
+    select coalesce(json_agg(m order by m.created_at), '[]') from (
+      select id, from_admin, body, created_at from support_messages where thread_id = p_thread order by created_at desc limit 100) m));
+end $$;
+
 -- ألعاب يطلبها الزباين وغير موجودة في الموقع
 create table if not exists public.custom_requests (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   norm text not null unique,
   platform text default 'PS4/PS5',
+  cover text default '',
   count integer not null default 0,
   status text not null default 'open' check (status in ('open', 'done')),
   created_at timestamptz not null default now(),
@@ -163,20 +260,25 @@ alter table public.game_requests enable row level security;
 alter table public.game_votes enable row level security;
 alter table public.sync_queue enable row level security;
 alter table public.custom_requests enable row level security;
+alter table public.catalog enable row level security;
+alter table public.chat_messages enable row level security;
+alter table public.chat_rate enable row level security;
+alter table public.support_threads enable row level security;
+alter table public.support_messages enable row level security;
 alter table public.custom_request_devices enable row level security;
 
 do $$
 declare t text;
 begin
   -- جداول يقرأها الجميع ويعدلها المدير فقط
-  foreach t in array array['games', 'products', 'banners', 'notifications', 'settings'] loop
+  foreach t in array array['games', 'products', 'banners', 'notifications', 'settings', 'catalog', 'chat_messages'] loop
     execute format('drop policy if exists "public read" on public.%I', t);
     execute format('create policy "public read" on public.%I for select using (true)', t);
     execute format('drop policy if exists "admin write" on public.%I', t);
     execute format('create policy "admin write" on public.%I for all to authenticated using (public.is_admin()) with check (public.is_admin())', t);
   end loop;
   -- جداول خاصة بالمدير فقط
-  foreach t in array array['game_sources', 'coupons', 'orders', 'game_requests', 'game_votes', 'sync_queue', 'custom_requests', 'custom_request_devices'] loop
+  foreach t in array array['game_sources', 'coupons', 'orders', 'game_requests', 'game_votes', 'sync_queue', 'custom_requests', 'custom_request_devices', 'chat_rate', 'support_threads', 'support_messages'] loop
     execute format('drop policy if exists "admin only" on public.%I', t);
     execute format('create policy "admin only" on public.%I for all to authenticated using (public.is_admin()) with check (public.is_admin())', t);
   end loop;
@@ -221,7 +323,8 @@ begin
   return v_n;
 end $$;
 
-create or replace function public.request_custom_game(p_title text, p_platform text, p_device text) returns integer
+drop function if exists public.request_custom_game(text, text, text);
+create or replace function public.request_custom_game(p_title text, p_platform text, p_device text, p_cover text default null) returns integer
 language plpgsql security definer set search_path = public as $$
 declare v_title text := left(trim(coalesce(p_title, '')), 80); v_norm text; v_id uuid; v_n int; v_recent int; v_body text; v_ref text;
 begin
@@ -230,18 +333,19 @@ begin
   select count(*) into v_recent from custom_request_devices where device_id = p_device and created_at > now() - interval '1 hour';
   if v_recent >= 10 then raise exception 'طلبات كثيرة، حاول لاحقاً'; end if;
   v_norm := regexp_replace(lower(v_title), '\s+', ' ', 'g');
-  insert into custom_requests (title, norm, platform) values (v_title, v_norm, coalesce(nullif(p_platform, ''), 'PS4/PS5'))
+  insert into custom_requests (title, norm, platform, cover) values (v_title, v_norm, coalesce(nullif(p_platform, ''), 'PS4/PS5'), left(coalesce(p_cover, ''), 500))
   on conflict (norm) do update set status = 'open', updated_at = now()
   returning id into v_id;
   insert into custom_request_devices (req_id, device_id) values (v_id, p_device) on conflict do nothing;
   if found then
     update custom_requests set count = count + 1 where id = v_id returning count, title into v_n, v_title;
+    update catalog set requests = v_n where norm = v_norm;
     v_ref := 'creq:' || v_id::text;
     v_body := case when v_n > 1 then v_n || ' أشخاص طلبوا توفير لعبة «' || v_title || '» — جاري تجهيزها في المحل'
       else 'لاعب طلب توفير لعبة «' || v_title || '» — جاري تجهيزها في المحل' end;
     update notifications set body = v_body, created_at = now() where ref = v_ref and created_at > now() - interval '6 hours';
     if not found then
-      insert into notifications (type, icon, title, body, link, ref) values ('request', '🙋', 'طلب توفير لعبة', v_body, '#/games', v_ref);
+      insert into notifications (type, icon, title, body, link, ref) values ('request', '🙋', 'طلب توفير لعبة', v_body, '#/discover', v_ref);
     end if;
   else
     select count into v_n from custom_requests where id = v_id;
@@ -325,7 +429,10 @@ end $$;
 grant execute on function public.is_admin() to anon, authenticated;
 grant execute on function public.request_game(uuid, text) to anon, authenticated;
 grant execute on function public.vote_game(uuid, text, int) to anon, authenticated;
-grant execute on function public.request_custom_game(text, text, text) to anon, authenticated;
+grant execute on function public.request_custom_game(text, text, text, text) to anon, authenticated;
+grant execute on function public.chat_post(text, text, text) to anon, authenticated;
+grant execute on function public.support_send(uuid, text, text, text) to anon, authenticated;
+grant execute on function public.support_fetch(uuid, text, boolean) to anon, authenticated;
 grant execute on function public.check_coupon(text) to anon, authenticated;
 grant execute on function public.place_order(text, text, uuid[], text) to anon, authenticated;
 
@@ -340,7 +447,8 @@ create policy "admin delete images" on storage.objects for delete to authenticat
 
 -- ---------- إعدادات افتراضية ----------
 insert into public.settings (key, value) values
-  ('discount', '{"enabled": true, "percent": 20, "min_count": 3}')
+  ('discount', '{"enabled": true, "percent": 20, "min_count": 3}'),
+  ('chat', '{"public": true}')
 on conflict (key) do nothing;
 
 -- ---------- المدير ----------

@@ -10,7 +10,7 @@ import * as rawg from './rawg.js';
 let root;
 const TABS = [
   ['status', 'الحالة', 'chart'], ['games', 'الألعاب', 'gamepad'], ['products', 'المنتجات', 'box'], ['banners', 'صور البانر', 'image'],
-  ['requests', 'طلبات التوفير', 'users'], ['orders', 'الطلبات', 'list'], ['discounts', 'الخصومات', 'tag'], ['sync', 'المزامنة', 'sync'],
+  ['requests', 'طلبات التوفير', 'users'], ['chats', 'المحادثات', 'chat'], ['orders', 'الطلبات', 'list'], ['discounts', 'الخصومات', 'tag'], ['sync', 'المزامنة', 'sync'],
   ['page', 'الصفحة', 'layout'], ['settings', 'الإعدادات', 'cog'],
 ];
 
@@ -42,12 +42,19 @@ function renderLogin() {
 
 // ---------- الهيكل ----------
 let current = ssGet('jx_cp_tab', 'status');
+let shellUnread = 0;
+let chatTimer = null;
+async function countUnread() {
+  try { shellUnread = (await db.list('support_threads', { order: 'last_at' })).reduce((n, t) => n + (t.unread_admin || 0), 0); } catch { shellUnread = 0; }
+}
 function renderShell() {
+  if (!renderShell.counted) { renderShell.counted = true; countUnread().then(() => { if (shellUnread) renderShell(); }); }
   const pending = state.games.filter((g) => g.status !== 'available' && g.requests > 0).length;
+  const unreadChats = shellUnread;
   root.innerHTML = `<div class="container"><div class="cp">
     <aside class="cp-side" id="cp-side">
       <div class="cp-user">👑 مرحباً، <b>admin</b><br><small>${mode === 'cloud' ? '🟢 متصل بقاعدة البيانات' : '🟠 وضع تجريبي'}</small></div>
-      ${TABS.map(([k, l, ic]) => `<button class="cp-tab ${k === current ? 'active' : ''}" data-tab="${k}">${icon(ic, 'ico-sm')} ${l}${k === 'requests' && pending ? `<span class="n">${pending}</span>` : ''}</button>`).join('')}
+      ${TABS.map(([k, l, ic]) => `<button class="cp-tab ${k === current ? 'active' : ''}" data-tab="${k}">${icon(ic, 'ico-sm')} ${l}${k === 'requests' && pending ? `<span class="n">${pending}</span>` : ''}${k === 'chats' && unreadChats ? `<span class="n">${unreadChats}</span>` : ''}</button>`).join('')}
       <button class="cp-tab" id="cp-out">${icon('logout', 'ico-sm')} خروج</button>
     </aside>
     <section id="cp-main"></section>
@@ -65,6 +72,7 @@ function renderShell() {
 }
 
 async function show() {
+  clearInterval(chatTimer); chatTimer = null;
   const old = $('#cp-main');
   if (!old) return;
   const main = old.cloneNode(false);
@@ -466,7 +474,7 @@ VIEWS.requests = async (main) => {
     if (!add) return;
     const r = custom.find((x) => x.id === add.dataset.add);
     gameForm(null, {
-      draft: { title: r.title, platform: r.platform || 'PS4/PS5', price: DEFAULT_GAME_PRICE },
+      draft: { title: r.title, platform: r.platform || 'PS4/PS5', price: DEFAULT_GAME_PRICE, ...catalogDraft(r.title, r.cover) },
       onSaved: async (g) => {
         await db.update('custom_requests', r.id, { status: 'done' });
         if (g.status !== 'available') await db.update('games', g.id, { requests: r.count });
@@ -563,7 +571,13 @@ async function fetchDaily() {
   const queue = await db.list('sync_queue', { limit: 500 });
   const exclude = [...state.games.map((g) => g.title), ...queue.map((q) => q.title)];
   const found = await rawg.discover(exclude, 10);
-  for (const f of found) await db.insert('sync_queue', { rawg_id: f.rawg_id, title: f.title, payload: f, status: 'pending' });
+  const inCat = new Set(state.catalog.map((c) => c.norm));
+  for (const f of found) {
+    await db.insert('sync_queue', { rawg_id: f.rawg_id, title: f.title, payload: f, status: 'pending' });
+    const norm = f.title.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!inCat.has(norm)) await db.insert('catalog', { title: f.title, norm, platform: f.platform, cover: f.cover || '', screenshots: [], description: '', rawg_id: f.rawg_id, requests: 0 }).catch(() => {});
+  }
+  await loadAll();
   return found.length;
 }
 
@@ -582,7 +596,20 @@ VIEWS.sync = async (main) => {
     <div class="panel ${key ? '' : 'hidden'}"><div class="panel-head"><h3>📥 بانتظار المراجعة (${queue.length})</h3><button class="btn btn-ghost btn-sm" id="q-fetch">${icon('sync', 'ico-sm')} جلب ألعاب اليوم</button></div>
       <div class="list" id="q-list">${queue.map((q) => `<div class="li"><img class="wide" src="${esc(q.payload?.cover || '')}" alt=""><div class="grow"><div class="t">${esc(q.title)}</div><div class="s"><span>${esc(q.payload?.platform || '')}</span>${q.payload?.arabic ? '<span class="badge b-green">غالباً عربي</span>' : ''}</div></div>
         <div class="acts"><button class="btn btn-green btn-xs" data-ok="${q.id}">${icon('check', 'ico-sm')} مراجعة وإضافة</button><button class="btn btn-danger btn-xs" data-no="${q.id}">${icon('x', 'ico-sm')} رفض</button></div></div>`).join('') || '<div class="muted">لا توجد ألعاب بانتظار المراجعة — اضغط "جلب ألعاب اليوم"</div>'}</div>
+    </div>
+    <div class="panel"><div class="panel-head"><h3>🧭 قائمة "اكتشف ألعاب" (${state.catalog.length})</h3><button class="btn btn-ghost btn-sm" id="cat-add">${icon('plus', 'ico-sm')} أضف لعبة للقائمة</button></div>
+      <p class="muted" style="margin-top:-6px;font-size:.88rem">ألعاب تظهر للزباين في صفحة "اكتشف" ويقدرون يطلبون توفيرها. الجلب اليومي يضيف لها تلقائياً. أي لعبة تضيفها للموقع تختفي من هذي القائمة.</p>
+      <div class="list" id="cat-list">${[...state.catalog].sort((a, b) => (b.requests || 0) - (a.requests || 0)).map((c) => `<div class="li"><img src="${esc(c.cover || '')}" alt=""><div class="grow"><div class="t">${esc(c.title)}</div><div class="s"><span>${esc(c.platform || '')}</span>${c.requests ? `<span class="req-count">🙋 ${num(c.requests)} طلب</span>` : ''}${state.games.some((g) => g.title.trim().toLowerCase() === c.norm) ? '<span class="badge b-green">موجودة في الموقع</span>' : ''}</div></div>
+        <div class="acts"><button class="btn btn-gold btn-xs" data-cadd="${c.id}">${icon('plus', 'ico-sm')} أضفها للموقع</button><button class="btn btn-danger btn-xs" data-cdel="${c.id}">${icon('trash', 'ico-sm')}</button></div></div>`).join('') || '<div class="muted">القائمة فاضية</div>'}</div>
     </div>`;
+  $('#cat-list').onclick = async (e) => {
+    const a = e.target.closest('[data-cadd]'), d = e.target.closest('[data-cdel]');
+    if (d) { await db.remove('catalog', d.dataset.cdel); await loadAll(); show(); return; }
+    if (!a) return;
+    const c = state.catalog.find((x) => x.id === a.dataset.cadd);
+    gameForm(null, { draft: { title: c.title, platform: c.platform || 'PS4/PS5', price: DEFAULT_GAME_PRICE, description: c.description || '', cover: c.cover || '', screenshots: c.screenshots || [] } });
+  };
+  $('#cat-add').onclick = () => catalogForm();
   $('#k-save').onclick = () => { lsSet('jx_rawg_key', $('#k').value.trim()); toast('تم حفظ المفتاح ✅', { emoji: '🔑', kind: 'ok' }); show(); };
   if (!key) return;
   $('#q-fetch').onclick = async (e) => {
@@ -615,6 +642,99 @@ VIEWS.sync = async (main) => {
     } catch (x) { toast('تعذّر الجلب', { text: x.message, emoji: '⚠️', kind: 'bad' }); } finally { ok.disabled = false; }
   };
 };
+
+// ===================== قائمة "اكتشف" =====================
+function catalogDraft(title, cover) {
+  const n = String(title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const c = state.catalog.find((x) => x.norm === n);
+  return c ? { cover: c.cover || cover || '', screenshots: c.screenshots || [], description: c.description || '' } : { cover: cover || '' };
+}
+
+function catalogForm() {
+  let cover;
+  modal({
+    title: '➕ لعبة لقائمة "اكتشف"',
+    body: `<p class="muted" style="margin-top:0;font-size:.88rem">لعبة مش متوفرة عندك حالياً، تبغى الزباين يشوفونها ويطلبونها.</p>
+      <div class="field"><label>اسم اللعبة <span class="req">*</span></label><input class="input" id="cf-t"></div>
+      <div class="field"><label>الجهاز</label><select class="select" id="cf-p">${PLATFORMS.map((p) => `<option>${p}</option>`).join('')}</select></div>
+      <div class="field"><label>نبذة</label><textarea class="textarea" id="cf-d" style="min-height:70px"></textarea></div>
+      <div class="field"><span class="lbl">صورة الغلاف</span><div id="cf-c"></div></div>`,
+    actions: [{ label: `${icon('check')} حفظ`, cls: 'btn-gold', onClick: async () => {
+      const title = $('#cf-t').value.trim();
+      if (title.length < 2) { $('#cf-t').classList.add('err'); return false; }
+      if (cover.isBusy()) return false;
+      const norm = title.toLowerCase().replace(/\s+/g, ' ');
+      if (state.catalog.some((c) => c.norm === norm)) { toast('اللعبة موجودة في القائمة', { emoji: '❗', kind: 'bad' }); return false; }
+      await db.insert('catalog', { title, norm, platform: $('#cf-p').value, description: $('#cf-d').value.trim(), cover: cover.get()[0] || '', screenshots: [], requests: 0 });
+      await loadAll(); toast('أُضيفت لقائمة اكتشف ✅', { emoji: '🧭', kind: 'ok' }); show();
+    } }, { label: 'إلغاء' }],
+    onMount({ el }) { cover = imageField(el.querySelector('#cf-c'), { max: 800 }); },
+  });
+}
+
+// ===================== المحادثات =====================
+VIEWS.chats = async (main) => {
+  const threads = await db.list('support_threads', { order: 'last_at' });
+  const msgs = await db.list('chat_messages', { limit: 100 });
+  const pub = state.settings.chat?.public !== false;
+  shellUnread = threads.reduce((n, t) => n + (t.unread_admin || 0), 0);
+  main.innerHTML = `<div class="panel"><div class="panel-head"><h2>🎧 رسائل الزباين (تواصل مع المحل)</h2><button class="btn btn-ghost btn-sm" id="th-refresh">${icon('sync', 'ico-sm')} تحديث</button></div>
+      <p class="muted" style="margin-top:-6px;font-size:.88rem">كل زبون له محادثة خاصة ما يشوفها غيره. اضغط على المحادثة للرد — الرد يوصله داخل الموقع.</p>
+      <div class="list" id="th-list">${threads.map((t) => `<button class="li" data-th="${t.id}" style="text-align:start;cursor:pointer;width:100%"><div class="notif-ico">👤</div><div class="grow"><div class="t">${esc(t.name || 'زبون')}</div><div class="s"><span>${esc(t.last_body || '')}</span><span>• ${timeAgo(t.last_at || t.created_at)}</span></div></div>
+        ${t.unread_admin ? `<span class="badge b-red">${t.unread_admin} جديدة</span>` : ''}</button>`).join('') || '<div class="muted">لا توجد رسائل بعد</div>'}</div></div>
+    <div class="panel"><div class="panel-head"><h2>👥 الدردشة العامة</h2></div>
+      <div class="toggle-row"><div><b>تشغيل الدردشة العامة</b><div class="muted" style="font-size:.82rem">إذا أوقفتها تختفي من الموقع ويبقى فقط "تواصل مع المحل"</div></div><label class="switch"><input type="checkbox" id="pub-on" ${pub ? 'checked' : ''}><span></span></label></div>
+      <form id="pub-form" style="display:flex;gap:8px;margin-bottom:14px"><input class="input" id="pub-text" placeholder="اكتب رسالة باسم المحل 👑" maxlength="300"><button class="btn btn-gold" type="submit">${icon('send', 'ico-sm')} إرسال</button></form>
+      <div class="list" id="pub-list">${msgs.map((m) => `<div class="li"><div class="notif-ico">${m.is_admin ? '👑' : '💬'}</div><div class="grow"><div class="t">${esc(m.name)}</div><div class="s" style="white-space:normal">${esc(m.body)} • ${timeAgo(m.created_at)}</div></div>
+        <div class="acts"><button class="btn btn-danger btn-xs" data-mdel="${m.id}" title="حذف">${icon('trash', 'ico-sm')}</button></div></div>`).join('') || '<div class="muted">لا توجد رسائل</div>'}</div></div>`;
+  $('#th-refresh').onclick = () => show();
+  $('#th-list').onclick = (e) => { const b = e.target.closest('[data-th]'); if (b) openThread(threads.find((t) => t.id === b.dataset.th)); };
+  $('#pub-on').onchange = async (e) => { await saveSetting('chat', { ...(state.settings.chat || {}), public: e.target.checked }); toast(e.target.checked ? 'الدردشة العامة شغالة' : 'تم إيقاف الدردشة العامة', { emoji: '👥' }); };
+  $('#pub-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const body = $('#pub-text').value.trim(); if (!body) return;
+    await db.insert('chat_messages', { name: `${state.site.name} 👑`, body, is_admin: true });
+    show();
+  };
+  $('#pub-list').onclick = async (e) => { const d = e.target.closest('[data-mdel]'); if (d) { await db.remove('chat_messages', d.dataset.mdel); show(); } };
+  chatTimer = setInterval(async () => {
+    const t2 = await db.list('support_threads', { order: 'last_at' }).catch(() => null);
+    if (t2 && t2.reduce((n, t) => n + (t.unread_admin || 0), 0) !== shellUnread && !document.querySelector('.overlay')) show();
+  }, 15000);
+};
+
+function openThread(t) {
+  let poll;
+  const drawMsgs = async (box) => {
+    const list = await db.list('support_messages', { eq: { thread_id: t.id }, order: 'created_at', asc: true });
+    const sig = list.length + (list.at(-1)?.id || '');
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    box.innerHTML = list.map((m) => `<div class="msg ${m.from_admin ? 'mine shop' : ''}"><div class="msg-name">${m.from_admin ? 'أنت (المحل)' : esc(t.name || 'زبون')}</div><div class="msg-body">${esc(m.body)}</div><div class="msg-time">${timeAgo(m.created_at)}</div></div>`).join('');
+    box.scrollTop = box.scrollHeight;
+  };
+  modal({
+    title: `💬 ${esc(t.name || 'زبون')}`, wide: true,
+    body: `<div class="chat-body" id="th-box" style="height:min(50vh,420px);border-radius:14px;border:1px solid var(--border)"></div>
+      <form id="th-form" style="display:flex;gap:8px;margin-top:10px"><input class="input" id="th-text" placeholder="اكتب ردك…" maxlength="1000" autocomplete="off"><button class="btn btn-gold" type="submit">${icon('send', 'ico-sm')} رد</button></form>
+      <div class="chips" style="margin-top:8px">${['أهلاً بك 👋 كيف نقدر نخدمك؟', 'متوفرة ✅ تقدر تمر المحل أو تطلبها من الموقع', 'غير متوفرة حالياً، بنوفرها لك قريباً إن شاء الله', 'تفضل كلمنا واتساب على الرقم ' + state.site.phone].map((q) => `<button type="button" class="chip" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>`,
+    onMount({ el }) {
+      const box = el.querySelector('#th-box');
+      drawMsgs(box);
+      db.update('support_threads', t.id, { unread_admin: 0 }).then(() => { shellUnread = Math.max(0, shellUnread - (t.unread_admin || 0)); t.unread_admin = 0; });
+      poll = setInterval(() => { if (!document.body.contains(box)) return clearInterval(poll); drawMsgs(box); }, 5000);
+      el.querySelector('.chips').onclick = (e) => { const q = e.target.closest('[data-q]'); if (q) { el.querySelector('#th-text').value = q.dataset.q; el.querySelector('#th-text').focus(); } };
+      el.querySelector('#th-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const inp = el.querySelector('#th-text'); const body = inp.value.trim(); if (!body) return;
+        await db.insert('support_messages', { thread_id: t.id, from_admin: true, body });
+        await db.update('support_threads', t.id, { unread_user: (t.unread_user || 0) + 1, last_body: '👑 ' + body.slice(0, 110), last_at: new Date().toISOString() });
+        t.unread_user = (t.unread_user || 0) + 1;
+        inp.value = ''; drawMsgs(box);
+      };
+    },
+  }).then(() => { clearInterval(poll); if (current === 'chats') show(); });
+}
 
 // ===================== الصفحة (التحكم بمحتوى الموقع) =====================
 const SEC_NAMES = { games: '🎮 الألعاب', products: '📦 المنتجات', services: '🛠️ خدماتنا', why: '👑 لماذا نحن', contact: '📞 تواصل معنا' };
