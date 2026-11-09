@@ -762,7 +762,8 @@ const routes = [
 ];
 let cleanup = null;
 async function route() {
-  const raw = decodeURIComponent(location.hash.slice(1) || '/');
+  let raw = decodeURIComponent(location.hash.slice(1) || '/');
+  if (!raw.startsWith('/')) raw = '/' + raw; // يدعم الروابط البسيطة مثل #cp
   const [path, qs] = raw.split('?');
   const q = new URLSearchParams(qs || '');
   $('#nav').classList.remove('open');
